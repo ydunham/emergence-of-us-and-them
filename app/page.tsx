@@ -12,6 +12,7 @@ import {
   stepSimulation,
   summarize,
 } from "../lib/simulation";
+import { calculatePcaPositions } from "../lib/layout";
 
 type PresetKey = "published" | "no-reciprocity" | "no-transitivity" | "suspicious" | "trusting";
 type PresetSelection = PresetKey | "custom";
@@ -36,48 +37,6 @@ function formatPercent(value: number) {
 
 function formatNumber(value: number, digits = 2) {
   return Number.isFinite(value) ? value.toFixed(digits) : "0.00";
-}
-
-function calculatePcaPositions(matrix: number[][]) {
-  const size = matrix.length;
-  if (size === 0) return [];
-  const means = Array(size).fill(0);
-  for (let column = 0; column < size; column += 1) {
-    for (let row = 0; row < size; row += 1) means[column] += matrix[row][column] / size;
-  }
-  const centered = matrix.map((row) => row.map((value, column) => value - means[column]));
-
-  const multiplyCovariance = (vector: number[]) => {
-    const projected = centered.map((row) => row.reduce((sum, value, index) => sum + value * vector[index], 0));
-    return Array.from({ length: size }, (_, column) =>
-      centered.reduce((sum, row, index) => sum + row[column] * projected[index], 0),
-    );
-  };
-
-  const eigenvectors: number[][] = [];
-  for (let component = 0; component < 2; component += 1) {
-    let vector = Array.from({ length: size }, (_, index) => Math.sin((index + 1) * (component + 1) * 1.73));
-    for (let iteration = 0; iteration < 36; iteration += 1) {
-      let next = multiplyCovariance(vector);
-      for (const previous of eigenvectors) {
-        const projection = next.reduce((sum, value, index) => sum + value * previous[index], 0);
-        next = next.map((value, index) => value - projection * previous[index]);
-      }
-      const length = Math.hypot(...next) || 1;
-      vector = next.map((value) => value / length);
-    }
-    eigenvectors.push(vector);
-  }
-
-  const scores = centered.map((row) =>
-    eigenvectors.map((vector) => row.reduce((sum, value, index) => sum + value * vector[index], 0)),
-  );
-  const maxX = Math.max(...scores.map((score) => Math.abs(score[0])), 0.001);
-  const maxY = Math.max(...scores.map((score) => Math.abs(score[1])), 0.001);
-  return scores.map(([x, y], index) => ({
-    x: size > 2 && maxX < 0.01 ? Math.cos((index / size) * Math.PI * 2) * 0.45 : x / maxX,
-    y: size > 2 && maxY < 0.01 ? Math.sin((index / size) * Math.PI * 2) * 0.45 : y / maxY,
-  }));
 }
 
 function NetworkCanvas({ state, showLinks }: { state: SimulationState; showLinks: boolean }) {
@@ -107,6 +66,7 @@ function NetworkCanvas({ state, showLinks }: { state: SimulationState; showLinks
       return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
     };
     const target = calculatePcaPositions(state.closeness);
+    if (state.round === 0) previousPositions.current = [];
     const prior = previousPositions.current;
     const positions = target.map((position, index) => {
       if (!prior[index]) return position;

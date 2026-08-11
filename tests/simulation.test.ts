@@ -7,6 +7,7 @@ import {
   runSimulation,
   stepSimulation,
 } from "../lib/simulation.ts";
+import { calculatePcaPositions } from "../lib/layout.ts";
 
 test("starts as a homogeneous symmetric population", () => {
   const state = createSimulation(DEFAULT_CONFIG);
@@ -18,6 +19,23 @@ test("starts as a homogeneous symmetric population", () => {
       if (first !== second) assert.equal(state.closeness[first][second], 0.5);
     }
   }
+});
+
+test("places a neutral homogeneous population evenly around a circle", () => {
+  const state = createSimulation(DEFAULT_CONFIG);
+  const positions = calculatePcaPositions(state.closeness);
+  const radii = positions.map(({ x, y }) => Math.hypot(x, y));
+  const center = positions.reduce(
+    (sum, position) => ({
+      x: sum.x + position.x / positions.length,
+      y: sum.y + position.y / positions.length,
+    }),
+    { x: 0, y: 0 },
+  );
+
+  for (const radius of radii) assert.ok(Math.abs(radius - 0.64) < 1e-10);
+  assert.ok(Math.abs(center.x) < 1e-10);
+  assert.ok(Math.abs(center.y) < 1e-10);
 });
 
 test("a fixed seed reproduces the exact same run", () => {
@@ -44,4 +62,3 @@ test("published defaults generate nontrivial group structure", () => {
   assert.ok(result.snapshot.clustering >= 0 && result.snapshot.clustering <= 1);
   assert.ok(result.snapshot.cohesion >= 0 && result.snapshot.cohesion <= 1);
 });
-
