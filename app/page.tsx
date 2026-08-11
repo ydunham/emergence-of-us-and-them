@@ -12,7 +12,10 @@ import {
   stepSimulation,
   summarize,
 } from "../lib/simulation";
-import { calculatePcaPositions } from "../lib/layout";
+import {
+  calculatePcaPositions,
+  closenessMatricesEqual,
+} from "../lib/layout";
 
 type PresetKey = "published" | "no-reciprocity" | "no-transitivity" | "suspicious" | "trusting";
 type PresetSelection = PresetKey | "custom";
@@ -42,6 +45,7 @@ function formatNumber(value: number, digits = 2) {
 function NetworkCanvas({ state, showLinks }: { state: SimulationState; showLinks: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previousPositions = useRef<Array<{ x: number; y: number }>>([]);
+  const previousCloseness = useRef<number[][] | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -66,16 +70,29 @@ function NetworkCanvas({ state, showLinks }: { state: SimulationState; showLinks
       return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
     };
     const target = calculatePcaPositions(state.closeness);
-    if (state.round === 0) previousPositions.current = [];
+    const closenessChanged = !closenessMatricesEqual(
+      previousCloseness.current,
+      state.closeness,
+    );
+    if (state.round === 0) {
+      previousPositions.current = [];
+      previousCloseness.current = null;
+    }
     const prior = previousPositions.current;
-    const positions = target.map((position, index) => {
-      if (!prior[index]) return position;
-      return {
-        x: prior[index].x * 0.74 + position.x * 0.26,
-        y: prior[index].y * 0.74 + position.y * 0.26,
-      };
-    });
-    previousPositions.current = positions;
+    const shouldUpdatePositions = state.round === 0 || closenessChanged;
+    const positions = shouldUpdatePositions
+      ? target.map((position, index) => {
+          if (!prior[index]) return position;
+          return {
+            x: prior[index].x * 0.74 + position.x * 0.26,
+            y: prior[index].y * 0.74 + position.y * 0.26,
+          };
+        })
+      : prior;
+    if (shouldUpdatePositions) {
+      previousPositions.current = positions;
+      previousCloseness.current = state.closeness.map((row) => [...row]);
+    }
     const padding = 46;
     const point = (position: { x: number; y: number }) => ({
       x: padding + ((position.x + 1) / 2) * (rect.width - padding * 2),

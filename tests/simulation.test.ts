@@ -7,7 +7,10 @@ import {
   runSimulation,
   stepSimulation,
 } from "../lib/simulation.ts";
-import { calculatePcaPositions } from "../lib/layout.ts";
+import {
+  calculatePcaPositions,
+  closenessMatricesEqual,
+} from "../lib/layout.ts";
 
 test("starts as a homogeneous symmetric population", () => {
   const state = createSimulation(DEFAULT_CONFIG);
@@ -36,6 +39,16 @@ test("places a neutral homogeneous population evenly around a circle", () => {
   for (const radius of radii) assert.ok(Math.abs(radius - 0.64) < 1e-10);
   assert.ok(Math.abs(center.x) < 1e-10);
   assert.ok(Math.abs(center.y) < 1e-10);
+});
+
+test("detects whether spatially relevant closeness values changed", () => {
+  const state = createSimulation(DEFAULT_CONFIG);
+  const copy = state.closeness.map((row) => [...row]);
+  assert.equal(closenessMatricesEqual(copy, state.closeness), true);
+
+  copy[0][1] = 0.75;
+  copy[1][0] = 0.75;
+  assert.equal(closenessMatricesEqual(copy, state.closeness), false);
 });
 
 test("a fixed seed reproduces the exact same run", () => {

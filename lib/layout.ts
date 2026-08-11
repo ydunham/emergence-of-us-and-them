@@ -1,5 +1,19 @@
 export type LayoutPosition = { x: number; y: number };
 
+export function closenessMatricesEqual(
+  first: number[][] | null,
+  second: number[][],
+) {
+  if (!first || first.length !== second.length) return false;
+  for (let row = 0; row < second.length; row += 1) {
+    if (first[row].length !== second[row].length) return false;
+    for (let column = 0; column < second[row].length; column += 1) {
+      if (first[row][column] !== second[row][column]) return false;
+    }
+  }
+  return true;
+}
+
 function circularPositions(size: number): LayoutPosition[] {
   const radius = 0.64;
   return Array.from({ length: size }, (_, index) => {
@@ -89,4 +103,3 @@ export function calculatePcaPositions(matrix: number[][]): LayoutPosition[] {
   );
   return scores.map(([x, y]) => ({ x: x / maxX, y: y / maxY }));
 }
-
