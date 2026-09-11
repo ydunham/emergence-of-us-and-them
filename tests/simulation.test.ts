@@ -10,7 +10,7 @@ import {
   stepSimulation,
 } from "../lib/simulation.ts";
 import {
-  calculatePcaPositions,
+  calculateClosenessPositions,
   closenessMatricesEqual,
 } from "../lib/layout.ts";
 import { createComparisonConfig } from "../lib/presets.ts";
@@ -29,7 +29,7 @@ test("starts as a homogeneous symmetric population", () => {
 
 test("places a neutral homogeneous population evenly around a circle", () => {
   const state = createSimulation(DEFAULT_CONFIG);
-  const positions = calculatePcaPositions(state.closeness);
+  const positions = calculateClosenessPositions(state.closeness);
   const radii = positions.map(({ x, y }) => Math.hypot(x, y));
   const center = positions.reduce(
     (sum, position) => ({
@@ -42,6 +42,32 @@ test("places a neutral homogeneous population evenly around a circle", () => {
   for (const radius of radii) assert.ok(Math.abs(radius - 0.64) < 1e-10);
   assert.ok(Math.abs(center.x) < 1e-10);
   assert.ok(Math.abs(center.y) < 1e-10);
+});
+
+test("places cooperative pairs closer than antagonistic pairs", () => {
+  const matrix = [
+    [0, 0.9, 0.1, 0.5],
+    [0.9, 0, 0.1, 0.5],
+    [0.1, 0.1, 0, 0.9],
+    [0.5, 0.5, 0.9, 0],
+  ];
+  const positions = calculateClosenessPositions(matrix);
+  const distance = (first: number, second: number) => Math.hypot(
+    positions[first].x - positions[second].x,
+    positions[first].y - positions[second].y,
+  );
+
+  assert.ok(distance(0, 1) < distance(0, 2));
+  assert.ok(distance(2, 3) < distance(1, 2));
+  for (let first = 0; first < positions.length; first += 1) {
+    for (let second = first + 1; second < positions.length; second += 1) {
+      assert.ok(distance(first, second) >= 0.159);
+    }
+  }
+  assert.deepEqual(
+    calculateClosenessPositions(matrix),
+    calculateClosenessPositions(matrix),
+  );
 });
 
 test("detects whether spatially relevant closeness values changed", () => {

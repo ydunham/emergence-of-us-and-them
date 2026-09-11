@@ -15,7 +15,7 @@ import {
   summarize,
 } from "../lib/simulation";
 import {
-  calculatePcaPositions,
+  calculateClosenessPositions,
   closenessMatricesEqual,
 } from "../lib/layout";
 import {
@@ -66,7 +66,6 @@ function NetworkCanvas({ state, showLinks, groupThreshold }: { state: Simulation
       const value = Number.parseInt(normalized.length === 3 ? normalized.split("").map((character) => character + character).join("") : normalized, 16);
       return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
     };
-    const target = calculatePcaPositions(state.closeness);
     const closenessChanged = !closenessMatricesEqual(
       previousCloseness.current,
       state.closeness,
@@ -78,22 +77,20 @@ function NetworkCanvas({ state, showLinks, groupThreshold }: { state: Simulation
     const prior = previousPositions.current;
     const shouldUpdatePositions = state.round === 0 || closenessChanged;
     const positions = shouldUpdatePositions
-      ? target.map((position, index) => {
-          if (!prior[index]) return position;
-          return {
-            x: prior[index].x * 0.74 + position.x * 0.26,
-            y: prior[index].y * 0.74 + position.y * 0.26,
-          };
-        })
+      ? calculateClosenessPositions(state.closeness, prior)
       : prior;
     if (shouldUpdatePositions) {
       previousPositions.current = positions;
       previousCloseness.current = state.closeness.map((row) => [...row]);
     }
     const padding = 46;
+    const plotSize = Math.max(1, Math.min(
+      rect.width - padding * 2,
+      rect.height - padding * 2,
+    ));
     const point = (position: { x: number; y: number }) => ({
-      x: padding + ((position.x + 1) / 2) * (rect.width - padding * 2),
-      y: padding + ((position.y + 1) / 2) * (rect.height - padding * 2),
+      x: rect.width / 2 + position.x * plotSize / 2,
+      y: rect.height / 2 + position.y * plotSize / 2,
     });
 
     const groups = findGroups(state.closeness, groupThreshold).filter((group) => group.length > 1);
@@ -152,7 +149,7 @@ function NetworkCanvas({ state, showLinks, groupThreshold }: { state: Simulation
     });
   }, [state, showLinks, groupThreshold]);
 
-  return <canvas ref={canvasRef} className="network-canvas" aria-label="Spatial map of agents; nearby agents have similar relationship profiles" />;
+  return <canvas ref={canvasRef} className="network-canvas" aria-label="Spatial map of agents; agents with closer direct relationships are generally positioned nearer each other" />;
 }
 
 function Sparkline({ histories, labels }: { histories: Snapshot[][]; labels: string[] }) {
@@ -403,7 +400,7 @@ export default function Home() {
           <div className="visual-heading">
             <div>
               <p className="section-kicker">Relationship space</p>
-              <h2>Who is moving together?</h2>
+              <h2>Who is close to whom?</h2>
             </div>
             <label className="toggle"><input type="checkbox" checked={showLinks} onChange={(event) => setShowLinks(event.target.checked)} /> Show ties</label>
           </div>

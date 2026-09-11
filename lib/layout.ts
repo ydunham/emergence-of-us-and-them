@@ -1,5 +1,10 @@
 export type LayoutPosition = { x: number; y: number };
 
+const NEUTRAL_CLOSENESS = 0.5;
+const MINIMUM_DISTANCE = 0.14;
+const MAXIMUM_DISTANCE = 1.56;
+const MAXIMUM_RADIUS = 0.92;
+
 export function closenessMatricesEqual(
   first: number[][] | null,
   second: number[][],
@@ -25,81 +30,150 @@ function circularPositions(size: number): LayoutPosition[] {
   });
 }
 
-function hasUniformOffDiagonalCloseness(matrix: number[][]) {
-  if (matrix.length < 2) return true;
-  const reference = matrix[0][1];
+function isNeutralPopulation(matrix: number[][]) {
   for (let row = 0; row < matrix.length; row += 1) {
     for (let column = row + 1; column < matrix.length; column += 1) {
-      if (Math.abs(matrix[row][column] - reference) > 1e-10) return false;
+      if (Math.abs(matrix[row][column] - NEUTRAL_CLOSENESS) > 1e-10) {
+        return false;
+      }
     }
   }
   return true;
 }
 
-export function calculatePcaPositions(matrix: number[][]): LayoutPosition[] {
+function desiredDistance(closeness: number) {
+  const bounded = Math.min(1, Math.max(0, closeness));
+  return MINIMUM_DISTANCE + (1 - bounded) * (MAXIMUM_DISTANCE - MINIMUM_DISTANCE);
+}
+
+function normalizePositions(positions: LayoutPosition[]) {
+  const center = positions.reduce(
+    (sum, position) => ({
+      x: sum.x + position.x / positions.length,
+      y: sum.y + position.y / positions.length,
+    }),
+    { x: 0, y: 0 },
+  );
+  for (const position of positions) {
+    position.x -= center.x;
+    position.y -= center.y;
+  }
+
+  const radius = Math.max(
+    ...positions.map((position) => Math.hypot(position.x, position.y)),
+    0.001,
+  );
+  if (radius > MAXIMUM_RADIUS) {
+    const scale = MAXIMUM_RADIUS / radius;
+    for (const position of positions) {
+      position.x *= scale;
+      position.y *= scale;
+    }
+  }
+}
+
+function separateOverlappingNodes(positions: LayoutPosition[]) {
+  const minimumSeparation = positions.length <= 30 ? 0.16 : 0.09;
+  for (let iteration = 0; iteration < 12; iteration += 1) {
+    for (let first = 0; first < positions.length; first += 1) {
+      for (let second = first + 1; second < positions.length; second += 1) {
+        let dx = positions[first].x - positions[second].x;
+        let dy = positions[first].y - positions[second].y;
+        let distance = Math.hypot(dx, dy);
+        if (distance >= minimumSeparation) continue;
+        if (distance < 1e-6) {
+          const angle = ((first + 1) * 2.399 + (second + 1) * 0.917) % (Math.PI * 2);
+          dx = Math.cos(angle);
+          dy = Math.sin(angle);
+          distance = 1;
+        }
+        const offset = (minimumSeparation - distance) / 2;
+        const unitX = dx / distance;
+        const unitY = dy / distance;
+        positions[first].x += unitX * offset;
+        positions[first].y += unitY * offset;
+        positions[second].x -= unitX * offset;
+        positions[second].y -= unitY * offset;
+      }
+    }
+  }
+
+  const center = positions.reduce(
+    (sum, position) => ({
+      x: sum.x + position.x / positions.length,
+      y: sum.y + position.y / positions.length,
+    }),
+    { x: 0, y: 0 },
+  );
+  for (const position of positions) {
+    position.x -= center.x;
+    position.y -= center.y;
+  }
+}
+
+/**
+ * Minimizes the mismatch between displayed distance and 1 - direct pairwise
+ * closeness. Previous positions anchor the map against arbitrary rotation.
+ */
+export function calculateClosenessPositions(
+  matrix: number[][],
+  previous: LayoutPosition[] = [],
+): LayoutPosition[] {
   const size = matrix.length;
   if (size === 0) return [];
+  if (isNeutralPopulation(matrix)) return circularPositions(size);
 
-  // The diagonal is always zero, so PCA otherwise invents apparent differences
-  // between agents even when every interpersonal relationship is identical.
-  if (hasUniformOffDiagonalCloseness(matrix)) return circularPositions(size);
-
-  const means = Array(size).fill(0);
-  for (let column = 0; column < size; column += 1) {
-    for (let row = 0; row < size; row += 1) {
-      means[column] += matrix[row][column] / size;
-    }
-  }
-  const centered = matrix.map((row) =>
-    row.map((value, column) => value - means[column]),
+  const hasPrior = previous.length === size;
+  const anchors = (hasPrior ? previous : circularPositions(size)).map(
+    (position) => ({ ...position }),
   );
+  const positions = anchors.map((position) => ({ ...position }));
 
-  const multiplyCovariance = (vector: number[]) => {
-    const projected = centered.map((row) =>
-      row.reduce((sum, value, index) => sum + value * vector[index], 0),
-    );
-    return Array.from({ length: size }, (_, column) =>
-      centered.reduce(
-        (sum, row, index) => sum + row[column] * projected[index],
-        0,
-      ),
-    );
-  };
+  for (let iteration = 0; iteration < 140; iteration += 1) {
+    const gradients = Array.from({ length: size }, () => ({ x: 0, y: 0 }));
 
-  const eigenvectors: number[][] = [];
-  for (let component = 0; component < 2; component += 1) {
-    let vector = Array.from({ length: size }, (_, index) =>
-      Math.sin((index + 1) * (component + 1) * 1.73),
-    );
-    for (let iteration = 0; iteration < 36; iteration += 1) {
-      let next = multiplyCovariance(vector);
-      for (const previous of eigenvectors) {
-        const projection = next.reduce(
-          (sum, value, index) => sum + value * previous[index],
-          0,
-        );
-        next = next.map(
-          (value, index) => value - projection * previous[index],
-        );
+    for (let first = 0; first < size; first += 1) {
+      for (let second = first + 1; second < size; second += 1) {
+        let dx = positions[first].x - positions[second].x;
+        let dy = positions[first].y - positions[second].y;
+        let distance = Math.hypot(dx, dy);
+        if (distance < 1e-6) {
+          const angle = ((first + 1) * 2.399 + (second + 1) * 0.917) % (Math.PI * 2);
+          dx = Math.cos(angle) * 1e-3;
+          dy = Math.sin(angle) * 1e-3;
+          distance = 1e-3;
+        }
+
+        const closeness = matrix[first][second];
+        const target = desiredDistance(closeness);
+        const weight = 0.35 + Math.abs(closeness - NEUTRAL_CLOSENESS) * 1.3;
+        const magnitude = weight * (distance - target) / distance;
+        const gradientX = magnitude * dx;
+        const gradientY = magnitude * dy;
+        gradients[first].x += gradientX;
+        gradients[first].y += gradientY;
+        gradients[second].x -= gradientX;
+        gradients[second].y -= gradientY;
       }
-      const length = Math.hypot(...next) || 1;
-      vector = next.map((value) => value / length);
     }
-    eigenvectors.push(vector);
+
+    const progress = iteration / 139;
+    const learningRate = 0.18 * (1 - progress) + 0.025 * progress;
+    const anchorWeight = hasPrior ? 0.035 : 0.008;
+    for (let index = 0; index < size; index += 1) {
+      positions[index].x -= learningRate * (
+        gradients[index].x / size +
+        anchorWeight * (positions[index].x - anchors[index].x)
+      );
+      positions[index].y -= learningRate * (
+        gradients[index].y / size +
+        anchorWeight * (positions[index].y - anchors[index].y)
+      );
+    }
+    normalizePositions(positions);
   }
 
-  const scores = centered.map((row) =>
-    eigenvectors.map((vector) =>
-      row.reduce((sum, value, index) => sum + value * vector[index], 0),
-    ),
-  );
-  const maxX = Math.max(
-    ...scores.map((score) => Math.abs(score[0])),
-    0.001,
-  );
-  const maxY = Math.max(
-    ...scores.map((score) => Math.abs(score[1])),
-    0.001,
-  );
-  return scores.map(([x, y]) => ({ x: x / maxX, y: y / maxY }));
+  separateOverlappingNodes(positions);
+
+  return positions;
 }
