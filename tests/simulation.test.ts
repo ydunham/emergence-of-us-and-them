@@ -5,6 +5,7 @@ import {
   DEFAULT_CONFIG,
   DEFAULT_GROUP_THRESHOLD,
   findGroups,
+  PUBLISHED_CONFIG,
   runSimulation,
   shouldSampleSnapshot,
   stepSimulation,
@@ -25,6 +26,15 @@ test("starts as a homogeneous symmetric population", () => {
       if (first !== second) assert.equal(state.closeness[first][second], 0.5);
     }
   }
+});
+
+test("uses a short classroom run without redefining the published defaults", () => {
+  assert.equal(DEFAULT_CONFIG.rounds, 100);
+  assert.equal(PUBLISHED_CONFIG.rounds, 10_000);
+  assert.equal(DEFAULT_CONFIG.population, PUBLISHED_CONFIG.population);
+  assert.equal(DEFAULT_CONFIG.trust, PUBLISHED_CONFIG.trust);
+  assert.equal(DEFAULT_CONFIG.reciprocity, PUBLISHED_CONFIG.reciprocity);
+  assert.equal(DEFAULT_CONFIG.transitivity, PUBLISHED_CONFIG.transitivity);
 });
 
 test("places a neutral homogeneous population evenly around a circle", () => {

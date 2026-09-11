@@ -1,6 +1,11 @@
-import type { SimulationConfig } from "./simulation";
+import {
+  DEFAULT_CONFIG,
+  PUBLISHED_CONFIG,
+  type SimulationConfig,
+} from "./simulation.ts";
 
 export type PresetKey =
+  | "classroom"
   | "published"
   | "no-reciprocity"
   | "no-transitivity"
@@ -8,6 +13,7 @@ export type PresetKey =
   | "trusting";
 
 export type PresetSelection = PresetKey | "custom";
+export type ComparisonPresetKey = Exclude<PresetKey, "classroom" | "published">;
 
 type Preset = {
   label: string;
@@ -16,14 +22,14 @@ type Preset = {
 };
 
 export const PRESETS: Record<PresetKey, Preset> = {
+  classroom: {
+    label: "Classroom default",
+    changes: { ...DEFAULT_CONFIG },
+    comparisonChanges: {},
+  },
   published: {
-    label: "Published default",
-    changes: {
-      population: 12,
-      trust: 0,
-      reciprocity: 3,
-      transitivity: 2,
-    },
+    label: "Published defaults",
+    changes: { ...PUBLISHED_CONFIG },
     comparisonChanges: {},
   },
   "no-reciprocity": {
@@ -48,9 +54,16 @@ export const PRESETS: Record<PresetKey, Preset> = {
   },
 };
 
+export const COMPARISON_PRESET_KEYS: ComparisonPresetKey[] = [
+  "no-reciprocity",
+  "no-transitivity",
+  "suspicious",
+  "trusting",
+];
+
 export function createComparisonConfig(
   current: SimulationConfig,
-  preset: PresetKey,
+  preset: ComparisonPresetKey,
 ): SimulationConfig {
   return { ...current, ...PRESETS[preset].comparisonChanges };
 }

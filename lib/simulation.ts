@@ -42,13 +42,18 @@ export type SimulationState = {
   lastEvent: InteractionEvent | null;
 };
 
-export const DEFAULT_CONFIG: SimulationConfig = {
+export const PUBLISHED_CONFIG: SimulationConfig = {
   population: 12,
   rounds: 10_000,
   trust: 0,
   reciprocity: 3,
   transitivity: 2,
   seed: 2014,
+};
+
+export const DEFAULT_CONFIG: SimulationConfig = {
+  ...PUBLISHED_CONFIG,
+  rounds: 100,
 };
 
 export const DEFAULT_GROUP_THRESHOLD = 0.7;

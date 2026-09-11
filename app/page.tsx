@@ -19,6 +19,8 @@ import {
   closenessMatricesEqual,
 } from "../lib/layout";
 import {
+  COMPARISON_PRESET_KEYS,
+  ComparisonPresetKey,
   createComparisonConfig,
   PRESETS,
   PresetKey,
@@ -211,13 +213,13 @@ export default function Home() {
   const [snapshot, setSnapshot] = useState(() => summarize(createSimulation(DEFAULT_CONFIG)));
   const [history, setHistory] = useState<Snapshot[]>([snapshot]);
   const [running, setRunning] = useState(false);
-  const [speed, setSpeed] = useState(100);
+  const [speed, setSpeed] = useState(1);
   const [showLinks, setShowLinks] = useState(true);
   const [groupThreshold, setGroupThreshold] = useState(DEFAULT_GROUP_THRESHOLD);
   const [preserveSeed, setPreserveSeed] = useState(false);
-  const [activePreset, setActivePreset] = useState<PresetSelection>("published");
+  const [activePreset, setActivePreset] = useState<PresetSelection>("classroom");
   const [showDetails, setShowDetails] = useState(false);
-  const [comparePreset, setComparePreset] = useState<PresetKey>("no-transitivity");
+  const [comparePreset, setComparePreset] = useState<ComparisonPresetKey>("no-transitivity");
   const [comparison, setComparison] = useState<ReturnType<typeof runSimulation> | null>(null);
   const [comparisonBaseline, setComparisonBaseline] = useState<ReturnType<typeof runSimulation> | null>(null);
   const stateRef = useRef(state);
@@ -448,7 +450,7 @@ export default function Home() {
 
       <section className="compare-section">
         <div className="compare-copy"><p className="section-kicker">Matched comparison</p><h2>Change one condition. Start with the same luck.</h2><p>Both runs begin from seed {config.seed}. Their random paths can diverge as the changed condition alters which interactions occur.</p></div>
-        <div className="compare-controls"><label>Compare current settings with<select value={comparePreset} onChange={(event) => setComparePreset(event.target.value as PresetKey)}>{Object.entries(PRESETS).filter(([key]) => key !== "published").map(([key, preset]) => <option key={key} value={key}>{preset.label}</option>)}</select></label><button className="primary-button" onClick={runComparison}>Run matched comparison</button></div>
+        <div className="compare-controls"><label>Compare current settings with<select value={comparePreset} onChange={(event) => setComparePreset(event.target.value as ComparisonPresetKey)}>{COMPARISON_PRESET_KEYS.map((key) => <option key={key} value={key}>{PRESETS[key].label}</option>)}</select></label><button className="primary-button" onClick={runComparison}>Run matched comparison</button></div>
         {comparison && comparisonBaseline && (
           <div className="comparison-results">
             <div className="comparison-cards"><ComparisonCard title="Current settings" snapshot={comparisonBaseline.snapshot} /><ComparisonCard title={PRESETS[comparePreset].label} snapshot={comparison.snapshot} /></div>
