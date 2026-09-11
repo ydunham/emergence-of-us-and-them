@@ -3,14 +3,17 @@ import test from "node:test";
 import {
   createSimulation,
   DEFAULT_CONFIG,
+  DEFAULT_GROUP_THRESHOLD,
   findGroups,
   runSimulation,
+  shouldSampleSnapshot,
   stepSimulation,
 } from "../lib/simulation.ts";
 import {
   calculatePcaPositions,
   closenessMatricesEqual,
 } from "../lib/layout.ts";
+import { createComparisonConfig } from "../lib/presets.ts";
 
 test("starts as a homogeneous symmetric population", () => {
   const state = createSimulation(DEFAULT_CONFIG);
@@ -74,4 +77,66 @@ test("published defaults generate nontrivial group structure", () => {
   assert.ok(groups.some((group) => group.length > 1));
   assert.ok(result.snapshot.clustering >= 0 && result.snapshot.clustering <= 1);
   assert.ok(result.snapshot.cohesion >= 0 && result.snapshot.cohesion <= 1);
+});
+
+test("group membership uses the selected closeness threshold", () => {
+  const matrix = [
+    [0, 0.7, 0.2],
+    [0.7, 0, 0.69],
+    [0.2, 0.69, 0],
+  ];
+
+  assert.equal(DEFAULT_GROUP_THRESHOLD, 0.7);
+  assert.deepEqual(findGroups(matrix), [[0, 1], [2]]);
+  assert.deepEqual(findGroups(matrix, 0.65), [[0, 1, 2]]);
+  assert.deepEqual(findGroups(matrix, 0.75), [[0], [1], [2]]);
+});
+
+test("comparison presets change only their named condition", () => {
+  const current = {
+    ...DEFAULT_CONFIG,
+    population: 37,
+    rounds: 100_000,
+    trust: 0.2,
+    reciprocity: 7,
+    transitivity: 6,
+    seed: 98_765,
+  };
+
+  assert.deepEqual(createComparisonConfig(current, "no-reciprocity"), {
+    ...current,
+    reciprocity: 1,
+  });
+  assert.deepEqual(createComparisonConfig(current, "no-transitivity"), {
+    ...current,
+    transitivity: 1,
+  });
+  assert.deepEqual(createComparisonConfig(current, "suspicious"), {
+    ...current,
+    trust: -0.3,
+  });
+  assert.deepEqual(createComparisonConfig(current, "trusting"), {
+    ...current,
+    trust: 0.3,
+  });
+});
+
+test("snapshot sampling stays aligned after a manual step", () => {
+  const sampledRounds: number[] = [];
+  const totalRounds = 1_000;
+  const batchSize = 100;
+  let round = 1;
+
+  while (round < totalRounds) {
+    const batch = Math.min(batchSize, totalRounds - round);
+    for (let index = 0; index < batch; index += 1) {
+      round += 1;
+      if (shouldSampleSnapshot(round, totalRounds)) sampledRounds.push(round);
+    }
+  }
+
+  assert.deepEqual(
+    sampledRounds,
+    Array.from({ length: 100 }, (_, index) => (index + 1) * 10),
+  );
 });

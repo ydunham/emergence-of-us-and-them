@@ -28,6 +28,7 @@ export type Snapshot = {
   averagePayoff: number;
   groups: number[][];
   isolates: number;
+  groupThreshold: number;
 };
 
 export type SimulationState = {
@@ -49,6 +50,8 @@ export const DEFAULT_CONFIG: SimulationConfig = {
   transitivity: 2,
   seed: 2014,
 };
+
+export const DEFAULT_GROUP_THRESHOLD = 0.7;
 
 export function seededRandom(seed: number) {
   let value = seed >>> 0;
@@ -256,7 +259,10 @@ export function weightedCohesion(matrix: number[][]) {
   return triplets === 0 ? 0 : closedStrength / triplets;
 }
 
-export function findGroups(matrix: number[][]) {
+export function findGroups(
+  matrix: number[][],
+  threshold = DEFAULT_GROUP_THRESHOLD,
+) {
   const visited = Array(matrix.length).fill(false);
   const groups: number[][] = [];
   for (let start = 0; start < matrix.length; start += 1) {
@@ -268,7 +274,7 @@ export function findGroups(matrix: number[][]) {
       const current = queue.shift()!;
       group.push(current);
       for (let other = 0; other < matrix.length; other += 1) {
-        if (!visited[other] && matrix[current][other] > 0.5) {
+        if (!visited[other] && matrix[current][other] >= threshold) {
           visited[other] = true;
           queue.push(other);
         }
@@ -279,8 +285,11 @@ export function findGroups(matrix: number[][]) {
   return groups.sort((first, second) => second.length - first.length);
 }
 
-export function summarize(state: SimulationState): Snapshot {
-  const groups = findGroups(state.closeness);
+export function summarize(
+  state: SimulationState,
+  groupThreshold = DEFAULT_GROUP_THRESHOLD,
+): Snapshot {
+  const groups = findGroups(state.closeness, groupThreshold);
   return {
     round: state.round,
     clustering: publishedClustering(state.closeness, state.config.seed),
@@ -297,19 +306,32 @@ export function summarize(state: SimulationState): Snapshot {
           (state.round * 2),
     groups,
     isolates: groups.filter((group) => group.length === 1).length,
+    groupThreshold,
   };
 }
 
-export function runSimulation(config: SimulationConfig, sampleCount = 100) {
-  const state = createSimulation(config);
-  const history: Snapshot[] = [summarize(state)];
-  const interval = Math.max(1, Math.floor(config.rounds / sampleCount));
-  while (state.round < config.rounds) {
-    stepSimulation(state);
-    if (state.round % interval === 0 || state.round === config.rounds) {
-      history.push(summarize(state));
-    }
-  }
-  return { state, history, snapshot: summarize(state) };
+export function shouldSampleSnapshot(
+  round: number,
+  totalRounds: number,
+  sampleCount = 100,
+) {
+  if (round <= 0) return false;
+  const interval = Math.max(1, Math.floor(totalRounds / sampleCount));
+  return round % interval === 0 || round >= totalRounds;
 }
 
+export function runSimulation(
+  config: SimulationConfig,
+  sampleCount = 100,
+  groupThreshold = DEFAULT_GROUP_THRESHOLD,
+) {
+  const state = createSimulation(config);
+  const history: Snapshot[] = [summarize(state, groupThreshold)];
+  while (state.round < config.rounds) {
+    stepSimulation(state);
+    if (shouldSampleSnapshot(state.round, config.rounds, sampleCount)) {
+      history.push(summarize(state, groupThreshold));
+    }
+  }
+  return { state, history, snapshot: summarize(state, groupThreshold) };
+}

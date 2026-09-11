@@ -4,11 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createSimulation,
   DEFAULT_CONFIG,
+  DEFAULT_GROUP_THRESHOLD,
   findGroups,
   runSimulation,
   SimulationConfig,
   SimulationState,
   Snapshot,
+  shouldSampleSnapshot,
   stepSimulation,
   summarize,
 } from "../lib/simulation";
@@ -16,17 +18,12 @@ import {
   calculatePcaPositions,
   closenessMatricesEqual,
 } from "../lib/layout";
-
-type PresetKey = "published" | "no-reciprocity" | "no-transitivity" | "suspicious" | "trusting";
-type PresetSelection = PresetKey | "custom";
-
-const PRESETS: Record<PresetKey, { label: string; changes: Partial<SimulationConfig> }> = {
-  published: { label: "Published default", changes: { population: 12, trust: 0, reciprocity: 3, transitivity: 2 } },
-  "no-reciprocity": { label: "No reciprocity", changes: { trust: 0, reciprocity: 1, transitivity: 2 } },
-  "no-transitivity": { label: "No transitivity", changes: { trust: 0, reciprocity: 3, transitivity: 1 } },
-  suspicious: { label: "Suspicious population", changes: { trust: -0.3, reciprocity: 3, transitivity: 2 } },
-  trusting: { label: "Trusting population", changes: { trust: 0.3, reciprocity: 3, transitivity: 2 } },
-};
+import {
+  createComparisonConfig,
+  PRESETS,
+  PresetKey,
+  PresetSelection,
+} from "../lib/presets";
 
 const SPEEDS = [1, 10, 100, 1_000];
 
@@ -42,7 +39,7 @@ function formatNumber(value: number, digits = 2) {
   return Number.isFinite(value) ? value.toFixed(digits) : "0.00";
 }
 
-function NetworkCanvas({ state, showLinks }: { state: SimulationState; showLinks: boolean }) {
+function NetworkCanvas({ state, showLinks, groupThreshold }: { state: SimulationState; showLinks: boolean; groupThreshold: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previousPositions = useRef<Array<{ x: number; y: number }>>([]);
   const previousCloseness = useRef<number[][] | null>(null);
@@ -99,7 +96,7 @@ function NetworkCanvas({ state, showLinks }: { state: SimulationState; showLinks
       y: padding + ((position.y + 1) / 2) * (rect.height - padding * 2),
     });
 
-    const groups = findGroups(state.closeness).filter((group) => group.length > 1);
+    const groups = findGroups(state.closeness, groupThreshold).filter((group) => group.length > 1);
     for (const group of groups) {
       const groupPoints = group.map((index) => point(positions[index]));
       const center = groupPoints.reduce((sum, item) => ({ x: sum.x + item.x / group.length, y: sum.y + item.y / group.length }), { x: 0, y: 0 });
@@ -153,7 +150,7 @@ function NetworkCanvas({ state, showLinks }: { state: SimulationState; showLinks
         context.fillText(String(index + 1), location.x, location.y - 14);
       }
     });
-  }, [state, showLinks]);
+  }, [state, showLinks, groupThreshold]);
 
   return <canvas ref={canvasRef} className="network-canvas" aria-label="Spatial map of agents; nearby agents have similar relationship profiles" />;
 }
@@ -219,6 +216,7 @@ export default function Home() {
   const [running, setRunning] = useState(false);
   const [speed, setSpeed] = useState(100);
   const [showLinks, setShowLinks] = useState(true);
+  const [groupThreshold, setGroupThreshold] = useState(DEFAULT_GROUP_THRESHOLD);
   const [preserveSeed, setPreserveSeed] = useState(false);
   const [activePreset, setActivePreset] = useState<PresetSelection>("published");
   const [showDetails, setShowDetails] = useState(false);
@@ -227,14 +225,18 @@ export default function Home() {
   const [comparisonBaseline, setComparisonBaseline] = useState<ReturnType<typeof runSimulation> | null>(null);
   const stateRef = useRef(state);
   const historyRef = useRef(history);
+  const groupThresholdRef = useRef(groupThreshold);
 
-  const publish = useCallback((next: SimulationState, forceHistory = false) => {
-    const nextSnapshot = summarize(next);
+  const publish = useCallback((next: SimulationState, historySnapshots: Snapshot[] = []) => {
+    const latestHistorySnapshot = historySnapshots.at(-1);
+    const nextSnapshot = latestHistorySnapshot?.round === next.round
+      ? latestHistorySnapshot
+      : summarize(next, groupThresholdRef.current);
     stateRef.current = next;
     setState({ ...next, closeness: next.closeness.map((row) => [...row]), payoffs: [...next.payoffs] });
     setSnapshot(nextSnapshot);
-    if (forceHistory || next.round === 0 || next.round % Math.max(1, Math.floor(next.config.rounds / 100)) === 0 || next.round >= next.config.rounds) {
-      const updated = [...historyRef.current, nextSnapshot].slice(-121);
+    if (historySnapshots.length) {
+      const updated = [...historyRef.current, ...historySnapshots].slice(-121);
       historyRef.current = updated;
       setHistory(updated);
     }
@@ -249,7 +251,7 @@ export default function Home() {
       ? nextConfig
       : { ...nextConfig, seed: (seedValues[0] % 2_147_483_646) + 1 };
     const next = createSimulation(resolvedConfig);
-    const firstSnapshot = summarize(next);
+    const firstSnapshot = summarize(next, groupThresholdRef.current);
     setConfig(resolvedConfig);
     stateRef.current = next;
     historyRef.current = [firstSnapshot];
@@ -279,7 +281,7 @@ export default function Home() {
   const step = useCallback(() => {
     if (stateRef.current.round >= stateRef.current.config.rounds) return;
     stepSimulation(stateRef.current);
-    publish(stateRef.current, true);
+    publish(stateRef.current, [summarize(stateRef.current, groupThresholdRef.current)]);
   }, [publish]);
 
   useEffect(() => {
@@ -288,8 +290,14 @@ export default function Home() {
     const tick = () => {
       const current = stateRef.current;
       const batch = Math.min(speed, current.config.rounds - current.round);
-      for (let index = 0; index < batch; index += 1) stepSimulation(current);
-      publish(current);
+      const sampledSnapshots: Snapshot[] = [];
+      for (let index = 0; index < batch; index += 1) {
+        stepSimulation(current);
+        if (shouldSampleSnapshot(current.round, current.config.rounds)) {
+          sampledSnapshots.push(summarize(current, groupThresholdRef.current));
+        }
+      }
+      publish(current, sampledSnapshots);
       if (current.round >= current.config.rounds) setRunning(false);
       else frame = requestAnimationFrame(tick);
     };
@@ -321,10 +329,26 @@ export default function Home() {
 
   const runComparison = () => {
     setRunning(false);
-    const baseline = runSimulation(config);
-    const variantConfig = { ...config, ...PRESETS[comparePreset].changes, seed: config.seed };
+    const baseline = runSimulation(config, 100, groupThreshold);
+    const variantConfig = createComparisonConfig(config, comparePreset);
     setComparisonBaseline(baseline);
-    setComparison(runSimulation(variantConfig));
+    setComparison(runSimulation(variantConfig, 100, groupThreshold));
+  };
+
+  const changeGroupThreshold = (value: number) => {
+    groupThresholdRef.current = value;
+    setGroupThreshold(value);
+    const nextSnapshot = summarize(stateRef.current, value);
+    setSnapshot(nextSnapshot);
+    const updatedHistory = historyRef.current.map((item, index, items) =>
+      index === items.length - 1 && item.round === nextSnapshot.round
+        ? nextSnapshot
+        : item,
+    );
+    historyRef.current = updatedHistory;
+    setHistory(updatedHistory);
+    setComparison(null);
+    setComparisonBaseline(null);
   };
 
   const shareConfiguration = async () => {
@@ -347,8 +371,8 @@ export default function Home() {
   };
 
   const exportSummary = () => {
-    const rows = ["round,clustering,cohesion,cooperation_rate,interaction_rate,average_payoff,groups,isolates"];
-    for (const item of history) rows.push([item.round, item.clustering, item.cohesion, item.cooperationRate, item.interactionRate, item.averagePayoff, item.groups.filter((group) => group.length > 1).length, item.isolates].join(","));
+    const rows = ["round,clustering,cohesion,cooperation_rate,interaction_rate,average_payoff,groups,isolates,group_threshold"];
+    for (const item of history) rows.push([item.round, item.clustering, item.cohesion, item.cooperationRate, item.interactionRate, item.averagePayoff, item.groups.filter((group) => group.length > 1).length, item.isolates, item.groupThreshold].join(","));
     download(`group-genesis-seed-${config.seed}.csv`, rows.join("\n"));
   };
 
@@ -384,7 +408,7 @@ export default function Home() {
             <label className="toggle"><input type="checkbox" checked={showLinks} onChange={(event) => setShowLinks(event.target.checked)} /> Show ties</label>
           </div>
           <div className="network-stage">
-            <NetworkCanvas state={state} showLinks={showLinks} />
+            <NetworkCanvas state={state} showLinks={showLinks} groupThreshold={groupThreshold} />
             <div className="round-chip">Round {snapshot.round.toLocaleString()} / {config.rounds.toLocaleString()}</div>
             <div className="stage-legend"><span><i className="friend-dot" /> cooperative tie</span><span><i className="enemy-line" /> antagonistic tie</span></div>
           </div>
@@ -394,25 +418,27 @@ export default function Home() {
         </div>
 
         <aside className="control-column">
-          <div className="control-topline"><div><p className="section-kicker">Model controls</p><h2>Shape the population</h2></div><button className="text-button" onClick={() => reset()}>Reset</button></div>
+          <div className="control-topline"><div><p className="section-kicker">Model controls</p><h2>Shape the population</h2></div></div>
           <label className="select-label">Classroom preset<select value={activePreset} onChange={(event) => applyPreset(event.target.value as PresetKey)}>{activePreset === "custom" && <option value="custom" disabled>Custom settings</option>}{Object.entries(PRESETS).map(([key, preset]) => <option key={key} value={key}>{preset.label}</option>)}</select></label>
           <div className="slider-list">
             <Slider label="Number of people" value={config.population} minimum={4} maximum={100} step={1} low="4" high="100" onChange={(value) => changeConfig("population", value)} />
             <Slider label="Trusting or suspicious" value={config.trust} minimum={-0.5} maximum={0.5} step={0.1} low="Suspicious" high="Trusting" onChange={(value) => changeConfig("trust", value)} />
             <Slider label="Reciprocity" value={config.reciprocity} minimum={1} maximum={10} step={1} low="None" high="Strong" onChange={(value) => changeConfig("reciprocity", value)} />
             <Slider label="Transitivity" value={config.transitivity} minimum={1} maximum={10} step={1} low="None" high="Strong" onChange={(value) => changeConfig("transitivity", value)} />
+            <Slider label="Group threshold" value={groupThreshold} minimum={0.55} maximum={0.95} step={0.05} low="Looser" high="Tighter" onChange={changeGroupThreshold} />
           </div>
-          <div className="seed-row"><label>Random seed<input type="number" value={config.seed} disabled={!preserveSeed} onChange={(event) => changeConfig("seed", Number(event.target.value) || 1)} /></label><label>Rounds<select value={config.rounds} onChange={(event) => changeConfig("rounds", Number(event.target.value))}><option value={1000}>1,000</option><option value={10000}>10,000</option><option value={100000}>100,000</option><option value={1000000}>1,000,000</option></select></label><label className="seed-preserve"><input type="checkbox" checked={preserveSeed} onChange={(event) => setPreserveSeed(event.target.checked)} /> Preserve random seed on reset</label></div>
+          <div className="seed-row"><label>Random seed<input type="number" value={config.seed} disabled={!preserveSeed} onChange={(event) => changeConfig("seed", Number(event.target.value) || 1)} /></label><label>Rounds<select value={config.rounds} onChange={(event) => changeConfig("rounds", Number(event.target.value))}><option value={100}>100</option><option value={1000}>1,000</option><option value={10000}>10,000</option><option value={100000}>100,000</option><option value={1000000}>1,000,000</option></select></label><label className="seed-preserve"><input type="checkbox" checked={preserveSeed} onChange={(event) => setPreserveSeed(event.target.checked)} /> Preserve random seed on reset</label></div>
           <div className="run-controls">
             <button className="primary-button" disabled={!canRun} onClick={() => setRunning((value) => !value)}>{running ? "Pause" : snapshot.round ? "Resume" : "Start"}</button>
             <button className="secondary-button" disabled={running || !canRun} onClick={step}>Step once</button>
+            <button className="secondary-button reset-button" onClick={() => reset()}>Reset</button>
             <label>Speed<select value={speed} onChange={(event) => setSpeed(Number(event.target.value))}>{SPEEDS.map((value) => <option key={value} value={value}>{value.toLocaleString()}×</option>)}</select></label>
           </div>
         </aside>
       </section>
 
       <section className="results-section">
-        <div className="results-heading"><div><p className="section-kicker">Live outcomes</p><h2>How group-like is this population?</h2></div><p>Published clustering preserves the paper’s binary measure. Cohesion grades the strength of closed, positive triangles.</p></div>
+        <div className="results-heading"><div><p className="section-kicker">Live outcomes</p><h2>How group-like is this population?</h2></div><p>Published clustering preserves the paper’s binary measure. Displayed groups are connected by chains of relationships at or above {groupThreshold.toFixed(2)}.</p></div>
         <div className="metric-grid">
           <Metric label="Published clustering" value={formatNumber(snapshot.clustering)} note="0 = none · 1 = complete" />
           <Metric label="Group cohesion" value={formatNumber(snapshot.cohesion)} note="graded tie strength" />
