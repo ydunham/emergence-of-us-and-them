@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 :root {
+  --font-lora: "Lora";
   --paper: #f4f0e6;
   --paper-deep: #e8e0d0;
   --ink: #142722;
