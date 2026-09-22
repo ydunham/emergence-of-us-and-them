@@ -6,6 +6,7 @@ import {
   DEFAULT_CONFIG,
   DEFAULT_GROUP_THRESHOLD,
   findGroups,
+  PUBLISHED_CONFIG,
   runSimulation,
   SimulationConfig,
   SimulationState,
@@ -208,16 +209,16 @@ function eventDescription(state: SimulationState) {
 }
 
 export default function Home() {
-  const [config, setConfig] = useState(DEFAULT_CONFIG);
-  const [state, setState] = useState(() => createSimulation(DEFAULT_CONFIG));
-  const [snapshot, setSnapshot] = useState(() => summarize(createSimulation(DEFAULT_CONFIG)));
+  const [config, setConfig] = useState(PUBLISHED_CONFIG);
+  const [state, setState] = useState(() => createSimulation(PUBLISHED_CONFIG));
+  const [snapshot, setSnapshot] = useState(() => summarize(createSimulation(PUBLISHED_CONFIG)));
   const [history, setHistory] = useState<Snapshot[]>([snapshot]);
   const [running, setRunning] = useState(false);
-  const [speed, setSpeed] = useState(1);
+  const [speed, setSpeed] = useState(PRESETS.published.speed);
   const [showLinks, setShowLinks] = useState(true);
   const [groupThreshold, setGroupThreshold] = useState(DEFAULT_GROUP_THRESHOLD);
   const [preserveSeed, setPreserveSeed] = useState(false);
-  const [activePreset, setActivePreset] = useState<PresetSelection>("classroom");
+  const [activePreset, setActivePreset] = useState<PresetSelection>("published");
   const [showDetails, setShowDetails] = useState(false);
   const [comparePreset, setComparePreset] = useState<ComparisonPresetKey>("no-transitivity");
   const [comparison, setComparison] = useState<ReturnType<typeof runSimulation> | null>(null);
@@ -274,6 +275,7 @@ export default function Home() {
       seed: config.seed,
     };
     setActivePreset(preset);
+    setSpeed(PRESETS[preset].speed);
     reset(next);
   };
 

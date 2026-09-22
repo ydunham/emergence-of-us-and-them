@@ -14,7 +14,7 @@ import {
   calculateClosenessPositions,
   closenessMatricesEqual,
 } from "../lib/layout.ts";
-import { createComparisonConfig } from "../lib/presets.ts";
+import { createComparisonConfig, PRESETS } from "../lib/presets.ts";
 
 test("starts as a homogeneous symmetric population", () => {
   const state = createSimulation(DEFAULT_CONFIG);
@@ -35,6 +35,15 @@ test("uses a short classroom run without redefining the published defaults", () 
   assert.equal(DEFAULT_CONFIG.trust, PUBLISHED_CONFIG.trust);
   assert.equal(DEFAULT_CONFIG.reciprocity, PUBLISHED_CONFIG.reciprocity);
   assert.equal(DEFAULT_CONFIG.transitivity, PUBLISHED_CONFIG.transitivity);
+});
+
+test("presets define their intended playback speed", () => {
+  assert.equal(PRESETS.published.speed, 100);
+  assert.equal(PRESETS.classroom.speed, 1);
+  assert.equal(PRESETS["no-reciprocity"].speed, 1);
+  assert.equal(PRESETS["no-transitivity"].speed, 1);
+  assert.equal(PRESETS.suspicious.speed, 1);
+  assert.equal(PRESETS.trusting.speed, 1);
 });
 
 test("places a neutral homogeneous population evenly around a circle", () => {

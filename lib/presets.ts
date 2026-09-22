@@ -17,6 +17,7 @@ export type ComparisonPresetKey = Exclude<PresetKey, "classroom" | "published">;
 
 type Preset = {
   label: string;
+  speed: number;
   changes: Partial<SimulationConfig>;
   comparisonChanges: Partial<SimulationConfig>;
 };
@@ -24,31 +25,37 @@ type Preset = {
 export const PRESETS: Record<PresetKey, Preset> = {
   classroom: {
     label: "Classroom default",
+    speed: 1,
     changes: { ...DEFAULT_CONFIG },
     comparisonChanges: {},
   },
   published: {
     label: "Published defaults",
+    speed: 100,
     changes: { ...PUBLISHED_CONFIG },
     comparisonChanges: {},
   },
   "no-reciprocity": {
     label: "No reciprocity",
+    speed: 1,
     changes: { trust: 0, reciprocity: 1, transitivity: 2 },
     comparisonChanges: { reciprocity: 1 },
   },
   "no-transitivity": {
     label: "No transitivity",
+    speed: 1,
     changes: { trust: 0, reciprocity: 3, transitivity: 1 },
     comparisonChanges: { transitivity: 1 },
   },
   suspicious: {
     label: "Suspicious population",
+    speed: 1,
     changes: { trust: -0.3, reciprocity: 3, transitivity: 2 },
     comparisonChanges: { trust: -0.3 },
   },
   trusting: {
     label: "Trusting population",
+    speed: 1,
     changes: { trust: 0.3, reciprocity: 3, transitivity: 2 },
     comparisonChanges: { trust: 0.3 },
   },
